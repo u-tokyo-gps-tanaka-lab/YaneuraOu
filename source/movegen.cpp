@@ -874,6 +874,188 @@ ExtMove* generate_checks(const Position& pos, ExtMove* mlist)
 	return mlist;
 }
 
+template <PieceType Pt, Color Us> struct make_undo_move_target {
+	FORCE_INLINE ExtMove* operator()(const Position& pos, Square from, Bitboard& target_, ExtMove* mlist)
+	{
+		target_.foreach([&](Square to) {
+			mlist++->move = make_move(to, from , Us, Pt);
+		});
+		return mlist;
+	}
+};
+
+template <PieceType Pt, Color Us> struct make_undo_promote_move_target {
+	FORCE_INLINE ExtMove* operator()(const Position& pos, Square from, Bitboard& target_, ExtMove* mlist)
+	{
+		constexpr Piece oldPc = raw_of(make_piece(Us, Pt));
+		target_.foreach([&](Square to) {
+			mlist++->move = make_move_promote(to, from , oldPc);
+		});
+		return mlist;
+	}
+};
+
+template <PieceType Pt, Color Us> struct GeneratePieceUndoMoves {
+	FORCE_INLINE ExtMove* operator()(const Position&pos, ExtMove*mlist, const Bitboard& target) {
+		auto pieces = pos.pieces(Us, Pt);
+		const auto occ = pos.pieces();
+		constexpr Color Them = ~Us;
+		constexpr Piece Pc = make_piece(Us, Pt);
+
+		while (pieces)
+		{
+			auto from = pieces.pop();
+
+			auto target2 =
+				Pt == PAWN ? pawnEffect(Them, from) :
+				Pt == LANCE  ? lanceEffect (Them, from, occ) :
+				Pt == KNIGHT ? knightEffect(Them, from) :
+				Pt == SILVER ? silverEffect(Them, from) :
+				Pt == GOLD ? goldEffect(Them, from) :
+				Pt == BISHOP ? bishopEffect(from, occ) :
+				Pt == ROOK ? rookEffect(from, occ) :
+				Pt == KING ? kingEffect(from) :
+				Pt == PRO_PAWN ? goldEffect(Them, from) :
+				Pt == PRO_LANCE  ? goldEffect (Them, from) :
+				Pt == PRO_KNIGHT ? goldEffect(Them, from) :
+				Pt == PRO_SILVER ? goldEffect(Them, from) :
+				Pt == HORSE ? horseEffect(from, occ) :
+				Pt == DRAGON ? dragonEffect(from, occ) :
+				Bitboard(1); // error
+
+			target2 &= target;
+			mlist = make_undo_move_target<Pt, Us>()(pos, from, target2, mlist);
+			if (is_promoted(Pc)) {
+				target2 =
+					Pt == PRO_PAWN ? pawnEffect(Them, from) :
+					Pt == PRO_LANCE  ? lanceEffect (Them, from, occ) :
+					Pt == PRO_KNIGHT ? knightEffect(Them, from) :
+					Pt == PRO_SILVER ? silverEffect(Them, from) :
+					Pt == HORSE ? bishopEffect(from, occ) :
+					Pt == DRAGON ? rookEffect(from, occ) :
+					Bitboard(1); // error
+				target2 &= target;
+				// 二歩にならないように
+				if (Pt == PRO_PAWN) {
+					target2 &= pawn_drop_mask<Us>(pos.pieces<Us>(PAWN));
+				}
+				if (target2) {
+					if (canPromote(Us, from)) {
+						mlist = make_undo_promote_move_target<Pt, Us>()(pos, from, target2, mlist);
+					} else {
+						target2 &= enemy_field(Us);
+						mlist = make_undo_promote_move_target<Pt, Us>()(pos, from, target2, mlist);
+					}
+				}
+			}
+		}
+
+		return mlist;
+	}
+};
+
+template <PieceType Pt, Color Us> struct GenerateDropUndoMoves {
+	FORCE_INLINE ExtMove* operator()(const Position&pos, ExtMove*mlist) {
+		if (Pt == PAWN && pos.in_check()) {
+			ExtMove moves[1024];
+			ExtMove* mlist1 = generateMoves<LEGAL_ALL>(pos, moves);
+			if (moves == mlist1) return mlist;
+		}
+		auto pieces = pos.pieces(Us, Pt);
+		constexpr Color Them = ~Us;
+
+		while (pieces)
+		{
+			auto from = pieces.pop();
+			mlist++->move = make_move_drop(Pt, from, Us);
+		}
+
+		return mlist;
+	}
+};
+
+template<Color Us>
+ExtMove* generate_undo(const Position& pos, ExtMove* mlist)
+{
+	constexpr Color Them = ~Us;
+		// 駒の移動元
+	const Bitboard target = pos.empties();
+	// 各駒による移動の指し手の生成
+	mlist = GeneratePieceUndoMoves<PAWN, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<PRO_PAWN, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<LANCE, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<PRO_LANCE, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<KNIGHT, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<PRO_KNIGHT, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<SILVER, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<PRO_SILVER, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<GOLD, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<BISHOP, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<HORSE, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<ROOK, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<DRAGON, Them>()(pos, mlist, target);
+	mlist = GeneratePieceUndoMoves<KING, Them>()(pos, mlist, target);
+
+	// --- 駒打ち
+	mlist = GenerateDropUndoMoves<PAWN, Them>()(pos, mlist);
+	mlist = GenerateDropUndoMoves<LANCE, Them>()(pos, mlist);
+	mlist = GenerateDropUndoMoves<KNIGHT, Them>()(pos, mlist);
+	mlist = GenerateDropUndoMoves<SILVER, Them>()(pos, mlist);
+	mlist = GenerateDropUndoMoves<GOLD, Them>()(pos, mlist);
+	mlist = GenerateDropUndoMoves<BISHOP, Them>()(pos, mlist);
+	mlist = GenerateDropUndoMoves<ROOK, Them>()(pos, mlist);
+	return mlist;
+}
+
+// undo_move
+ExtMove* generateUndoMoves(const Position& pos, ExtMove* mlist)
+{
+	return pos.side_to_move() == BLACK ? generate_undo<BLACK>(pos, mlist) : generate_undo<WHITE>(pos, mlist);
+}
+
+std::vector<string> generateUndoPositions(Position& pos)
+{
+	std::vector<string> ans;
+	Color Us = pos.side_to_move();
+	Color Them = ~Us;
+	ExtMove moves[2048];
+	ExtMove* genmoves = generateUndoMoves(pos, moves);
+	ExtMove* mlist = moves;
+	while (mlist < genmoves) {
+		ExtMove m = *mlist++;
+		Square to = to_sq(m.move);
+		Rank to_rank = rank_of(to);
+		Hand h = pos.hand_of(Them);
+		vector<Piece> pcs(1, NO_PIECE);
+		for (auto pt: {PAWN, LANCE, KNIGHT, SILVER, GOLD, BISHOP, ROOK}) {
+			Piece pc = make_piece(Us, pt);
+			if (hand_exists(h, pt)) {
+				if (!is_non_promotable_piece(pc)) {
+					pcs.push_back(make_promoted_piece(pc));
+				}
+				if (!((pt == PAWN || pt == LANCE || pt == KNIGHT) && to_rank == (Us == BLACK ? RANK_1 : RANK_9)) &&
+					!(pt == KNIGHT && to_rank == (Us == BLACK ? RANK_2 : RANK_8))) {
+						pcs.push_back(pc);
+					}
+			}
+		}
+		for (auto pc: pcs) {
+			pos.state()->capturedPiece = pc;
+			StateInfo* st = pos.state();	
+			StateInfo prevSt;
+			pos.state()->previous = &prevSt;		
+			pos.undo_move(m.move);
+			pos.set_state();
+			if (pos.pos_is_ok()) {
+				string sfen = pos.sfen(0);
+				// sync_cout << sfen << sync_endl;
+				ans.push_back(sfen);
+			}
+			pos.do_move(m.move, *st);
+		}
+	}
+	return ans;
+}
 
 // ----------------------------------
 //      指し手生成踏み台

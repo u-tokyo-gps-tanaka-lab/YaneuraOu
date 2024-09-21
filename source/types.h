@@ -1020,6 +1020,9 @@ class Position; // 前方宣言
 struct CheckInfo;
 template <MOVE_GEN_TYPE gen_type> ExtMove* generateMoves(const Position& pos, ExtMove* mlist);
 template <MOVE_GEN_TYPE gen_type> ExtMove* generateMoves(const Position& pos, ExtMove* mlist,Square recapSq); // RECAPTURES,RECAPTURES_ALL専用
+ExtMove* generateUndoMoves(const Position& pos, ExtMove* mlist);
+
+std::vector<std::string> generateUndoPositions(Position& pos);
 
 // MoveGeneratorのwrapper。範囲forで回すときに便利。
 template<MOVE_GEN_TYPE GenType>

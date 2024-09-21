@@ -799,9 +799,9 @@ private:
 	// Position::set_state()は、局面のハッシュキーおよび、
 	// 一度計算されると手が指されるたびに差分更新されるその他のデータを計算します。
 	// この関数は、新しい局面が設定されたときのみ使用されます。
-
+public:
 	void set_state() const;
-
+private:
 	// 王手になるbitboard等を更新する。set_state()とdo_move()のときに自動的に行われる。
 	// null moveのときは利きの更新を少し端折れるのでフラグを渡すことに。
 	template <bool doNullMove,Color Us>

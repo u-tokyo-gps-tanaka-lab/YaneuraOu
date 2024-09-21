@@ -553,6 +553,245 @@ void position_cmd(Position& pos, istringstream& is , StateListPtr& states)
 	Threads.main()->position_is_dirty = false;
 }
 
+string fen_to_sfen(string const& fen) {
+	std::istringstream ss(fen);
+	ss >> std::skipws;
+	string board, bw;
+	ss >> board >> bw;
+//	sync_cout << "board = " << board << ", bw= " << bw << sync_endl;
+	std::ostringstream os;
+	size_t i = 0;
+	while (i < board.size()) {
+		if (board[i] == '[') {i += 1; break;}
+		os << board[i];
+		i += 1;
+	}
+	os << " ";
+	os << (bw == "b" ? "w" : "b") << " ";
+	size_t pcount = 0;
+	char pchar = ' ';
+	while (i < board.size()) {
+		if (board[i] == ']') {i += 1; break;}
+		if (board[i] != pchar) {
+			if (pcount > 1) os << pcount;
+			if (pcount > 0)	os << pchar;
+			pcount = 0;
+			pchar = board[i];
+		}
+		pcount += 1;
+		i += 1;
+	}
+	if (pcount == 0) {
+		os << "-";
+	} else {
+		if (pcount > 1) os << pcount;
+		if (pcount > 0)	os << pchar;
+		pcount = 0;
+		pchar = board[i];
+	}
+	os << " 0";
+//	sync_cout << "fen2sfen " << fen << " -> " << os.str() << sync_endl;
+	return os.str();
+}
+string move_fen_to_sfen(string const& fen) {
+	std::ostringstream os;
+	if (fen[1] == '@') {
+		os << fen[0] << '*';
+	} else {
+		os << char('1' + (8 - (fen[0] - 'a'))) << char('a' + (8 - (fen[1] - '1')));
+	}
+	os << char('1' + (8 - (fen[2] - 'a'))) << char('a' + (8 - (fen[3] - '1')));
+	if (fen.size() == 5) {
+		os << '+';
+	}
+	return os.str();
+
+}
+
+// "check_king"コマンド処理部
+void check_king_cmd(Position& pos, istringstream& is , StateListPtr& states)
+{
+	string filename;
+	is >> filename;
+//	sync_cout << "check_king_cmd filename=" << filename << sync_endl;
+    SystemIO::TextReader reader;
+    if (reader.Open(filename).is_not_ok())
+       return;
+	string filename_OK(filename), filename_NG(filename);
+	filename_OK += "_OK.txt";
+	filename_NG += "_NG.txt";
+	SystemIO::TextWriter writer_OK, writer_NG;
+    if (writer_OK.Open(filename_OK).is_not_ok())
+       return;
+	if (writer_NG.Open(filename_NG).is_not_ok())
+       return; 
+    string line;
+	int count_all = 0, count_ok = 0;
+    while (reader.ReadLine(line).is_ok()) {
+		if (count_all % 1000 == 0) {
+			sync_cout << "count_all = " << count_all << sync_endl;
+		}
+		pos.set(fen_to_sfen(line), &states->back() , Threads.main());
+//		sync_cout << "line=" << line << ",pos=" << pos.sfen() << sync_endl;
+		if (pos.pos_is_ok()) {
+			count_ok += 1;
+			writer_OK.WriteLine(line);
+		} else {
+			writer_NG.WriteLine(line);
+		}
+		count_all += 1;
+	}
+	reader.Close();
+//	sync_cout << "check_king_cmd " << count_ok << " / " << count_all << sync_endl;
+}
+
+bool check_prev(Position& pos) {
+	std::vector<std::string> plist = generateUndoPositions(pos);
+	return plist.size() > 0;
+}
+// "check_prev"コマンド処理部
+void check_prev_cmd(Position& pos, istringstream& is , StateListPtr& states)
+{
+	string filename;
+	is >> filename;
+//	sync_cout << "check_prev_cmd filename=" << filename << sync_endl;
+    SystemIO::TextReader reader;
+    if (reader.Open(filename).is_not_ok())
+       return;
+	string filename_OK(filename), filename_NG(filename);
+	filename_OK += "_OK.txt";
+	filename_NG += "_NG.txt";
+	SystemIO::TextWriter writer_OK, writer_NG;
+    if (writer_OK.Open(filename_OK).is_not_ok())
+       return;
+	if (writer_NG.Open(filename_NG).is_not_ok())
+       return; 
+    string line;
+	int count_all = 0, count_ok = 0;
+    while (reader.ReadLine(line).is_ok()) {
+		if (count_all % 1000 == 0) {
+			sync_cout << "count_all = " << count_all << sync_endl;
+		}
+		pos.set(fen_to_sfen(line), &states->back() , Threads.main());
+//		sync_cout << "line=" << line << ",pos=" << pos.sfen() << sync_endl;
+		if (check_prev(pos)) {
+			count_ok += 1;
+			writer_OK.WriteLine(line);
+		} else {
+			writer_NG.WriteLine(line);
+		}
+		count_all += 1;
+	}
+	reader.Close();
+//	sync_cout << "check_king_cmd " << count_ok << " / " << count_all << sync_endl;
+}
+
+// "test_generate_previous"コマンド処理部
+void test_generate_previous_cmd(Position& pos, istringstream& is , StateListPtr& states) {
+	{
+		string sfen1 = fen_to_sfen("1+P+P5l/g+b2+N2nP/P4+SGB1/+pp2+n+r1PG/+P1+P1+ll1+N1/1k1P1p1+p1/p3+p+s3/2Rl2p1G/+pKP1+sP1s1[] w");
+		pos.set(sfen1, &states->back() , Threads.main());
+		ExtMove moves[2048];
+		ExtMove* genmoves = generateUndoMoves(pos, moves);
+		vector<string> smoves1;
+		for (ExtMove* cur = moves; cur != genmoves; ++cur) {
+			if (USI::move(cur->move) == move_fen_to_sfen("a2a1+")) {
+				sync_cout << USI::move(cur->move) << sync_endl;
+			}
+		}
+	}
+	{
+		string sfen1 = fen_to_sfen("1+b3+s1n1/1K+P1s4/5B1+N1/g3+PL+lG1/1+p1+P1+rLG+p/PNk2pG+pR/1P4+s+sP/1p+pPP1+P+n1/2+P+P2+p+l1[] w");
+		pos.set(sfen1, &states->back() , Threads.main());
+		ExtMove moves[2048];
+		ExtMove* genmoves = generateUndoMoves(pos, moves);
+		vector<string> smoves1;
+		for (ExtMove* cur = moves; cur != genmoves; ++cur) {
+			if (USI::move(cur->move) == move_fen_to_sfen("a2a1+")) {
+				sync_cout << USI::move(cur->move) << sync_endl;
+			}
+		}
+	}
+	string sfen = fen_to_sfen("r7g/1P4G1k/1pppppppP/8G/2N6/9/P1PPPPPPp/9/KG1R5[lllLnnNPbbssss] b");
+	pos.set(sfen, &states->back() , Threads.main());
+	ExtMove moves[2048];
+	ExtMove* genmoves = generateUndoMoves(pos, moves);
+	// この時点では打ち歩詰めも作成する．
+	string strmoves = "G@b1 G@g8 G@i6 N@c5 " // P@a3 P@b8 P@c3 P@d3 P@e3 P@f3 P@g3 P@h3 P@i7 
+	"R@d1 a2a1 a2a3 b2a1 b2b1 b3c5 c1b1 c1d1 c2c3 d2d1 d2d3 e1d1 e2e3 f1d1 f2f3 f8g8 g1d1 g2g3 g9g8 h1d1 h2h3 h5i6 h6i6 h8g8 i1d1 i5i6";
+	istringstream is1(strmoves);
+	string mstr;
+	vector<string> smoves, smoves1;
+	while (is1 >> mstr) {
+		smoves.push_back(move_fen_to_sfen(mstr));
+		//sync_cout << mstr << sync_endl;
+	}
+	sort(smoves.begin(), smoves.end());
+	for (ExtMove* cur = moves; cur != genmoves; ++cur) {
+		smoves1.push_back(USI::move(cur->move));
+		//sync_cout << USI::move(cur->move) << sync_endl;
+	}
+	//sync_cout << "before sort()" << sync_endl;
+	sort(smoves1.begin(), smoves1.end());
+	//sync_cout << "end sort()" << sync_endl;
+	if (smoves1 != smoves) {
+		for (auto m: smoves) {
+			sync_cout << m << " " << sync_endl;
+		}
+		sync_cout << sync_endl;
+		for (auto m: smoves1) {
+			sync_cout << m << " " << sync_endl;
+		}
+		sync_cout << sync_endl;
+	} else {
+		sync_cout << "OK" << sync_endl;
+	}
+}
+
+// "test_previous_positions"コマンド処理部
+void test_previous_positions_cmd(Position& pos, istringstream& is , StateListPtr& states) {
+	{
+	string sfen = fen_to_sfen("r7g/1P4G1k/1pppppppP/7G1/2N6/9/P1PPPPPPp/9/KG1R5[lllLnnNPbbssss] b");
+	pos.set(sfen, &states->back() , Threads.main());
+	vector<string> poslist {"r7g/1P4G1k/1ppppppp1/7GP/2N6/9/P1PPPPPPp/9/KG1R5[NLPnnlllssssbb] w", 
+                "r7g/1P4G1k/1ppppppp+p/7GP/2N6/9/P1PPPPPPp/9/KG1R5[NLnnlllssssbb] w",
+                "r7g/1P4G1k/1pppppppl/7GP/2N6/9/P1PPPPPPp/9/KG1R5[NPnnlllssssbb] w",
+				"r7g/1P4G1k/1ppppppp+l/7GP/2N6/9/P1PPPPPPp/9/KG1R5[NPnnlllssssbb] w",
+                "r7g/1P4G1k/1pppppppn/7GP/2N6/9/P1PPPPPPp/9/KG1R5[LPnnlllssssbb] w",
+                "r7g/1P4G1k/1ppppppp+n/7GP/2N6/9/P1PPPPPPp/9/KG1R5[LPnnlllssssbb] w"};
+	vector<string> poslist1 = generateUndoPositions(pos);
+	for (auto p: poslist) {
+		string sfen1 = fen_to_sfen(p);
+		pos.set(sfen1, &states->back() , Threads.main());
+		string sfen2 = pos.sfen(0);
+		auto it = find(poslist1.begin(), poslist1.end(), sfen2);
+		if (it == poslist1.end()) {
+			sync_cout << "not exist " << p << ", " << sfen2 << sync_endl;
+		}
+	}
+	}
+	{
+		string sfen = fen_to_sfen("1+pg3+P2/+N1S2p1g+s/+pb+nP+p4/+bp1+p+l2p1/1+n3+p+p2/+pKp1rr2P/5+P3/3+nklP1p/1+sG+l2sG+L[p] w");
+		pos.set(sfen, &states->back() , Threads.main());
+		vector<string> poslist1 = generateUndoPositions(pos);
+		if (poslist1.size() != 0) {
+			for (auto p: poslist1) {
+				sync_cout << p << sync_endl;
+			}
+		}
+	}
+	{
+		string sfen = fen_to_sfen("1+b3+s1n1/1K+P1s4/5B1+N1/g3+PL+lG1/1+p1+P1+rLG+p/PNk2pG+pR/1P4+s+sP/1p+pPP1+P+n1/2+P+P2+p+l1[] w");
+		pos.set(sfen, &states->back() , Threads.main());
+		vector<string> poslist1 = generateUndoPositions(pos);
+		if (poslist1.size() != 0) {
+			for (auto p: poslist1) {
+				sync_cout << p << sync_endl;
+			}
+		}
+	}
+}
+
 // "setoption"コマンド応答。
 void setoption_cmd(istringstream& is)
 {
@@ -1034,6 +1273,23 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 
 		// 一定時間待機するコマンド。("quit"の前に一定時間待ちたい時などに用いる。sleep 1000 == 1秒待つ)
 		else if (token == "sleep") { u64 ms; is >> ms; Tools::sleep(ms); }
+
+		// fenで書かれたファイルを読み込んで，pos.is_ok()かどうかを判定して，2つのファイルに出力する．
+		else if (token == "check_king") {
+			check_king_cmd(pos, is, states);
+		}
+		else if (token == "check_prev") {
+			check_prev_cmd(pos, is, states);
+		}
+
+		// 
+		else if (token == "test_generate_previous") {
+			test_generate_previous_cmd(pos, is, states);
+		}
+
+		else if (token == "test_previous_positions") {
+			test_previous_positions_cmd(pos, is, states);
+		}
 
 #if defined(MATE_1PLY) && defined(LONG_EFFECT_LIBRARY)
 		// この局面での1手詰め判定
