@@ -801,6 +801,7 @@ private:
 	// この関数は、新しい局面が設定されたときのみ使用されます。
 public:
 	void set_state() const;
+	int h_function() const;
 private:
 	// 王手になるbitboard等を更新する。set_state()とdo_move()のときに自動的に行われる。
 	// null moveのときは利きの更新を少し端折れるのでフラグを渡すことに。

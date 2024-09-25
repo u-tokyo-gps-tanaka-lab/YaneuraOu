@@ -1942,6 +1942,24 @@ void Position::undo_null_move()
 	sideToMove = ~sideToMove;
 }
 
+int Position::h_function() const
+{
+	Bitboard ps = pieces();
+	int hval = 0;
+	while (ps) {
+		Square sq = ps.pop();
+		Piece p = piece_on(sq);
+		hval += 10;
+		if (is_promoted(p)) {
+			hval += 10;
+			int rl = relative_rank(color_of(p), rank_of(sq));
+			if (rl > RANK_3) {
+				hval += (rl - RANK_3);
+			}
+		}
+	}
+	return hval - 20;
+}
 
 #if defined (USE_SEE)
 

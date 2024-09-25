@@ -1035,7 +1035,10 @@ std::vector<string> generateUndoPositions(Position& pos)
 				}
 				if (!((pt == PAWN || pt == LANCE || pt == KNIGHT) && to_rank == (Us == BLACK ? RANK_1 : RANK_9)) &&
 					!(pt == KNIGHT && to_rank == (Us == BLACK ? RANK_2 : RANK_8))) {
-						pcs.push_back(pc);
+						// 二歩のチェックが必要
+						if (pt != PAWN || !((pos.pieces(Us, PAWN) & file_bb(file_of(to))))) {
+							pcs.push_back(pc);
+						}
 					}
 			}
 		}

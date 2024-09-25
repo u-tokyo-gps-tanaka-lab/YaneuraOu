@@ -686,6 +686,88 @@ void check_prev_cmd(Position& pos, istringstream& is , StateListPtr& states)
 //	sync_cout << "check_king_cmd " << count_ok << " / " << count_all << sync_endl;
 }
 
+bool check_reach(Position& pos, StateInfo* si , Thread* th) {
+	using IS = std::pair<int, string> ;
+	std::map<string, string> prev;
+	std::priority_queue<IS, std::vector<IS>, greater<IS>> q;
+	string pos_s = pos.sfen();
+	prev[pos_s]	= "";
+	q.push(IS(pos.h_function(), pos_s));
+	std::map<string, int> distance;
+	distance[pos_s] = 0;
+	int i = 0;
+	while (!q.empty()) {
+		IS dp = q.top(); q.pop();
+		int d = dp.first;
+		string pos1 = dp.second;
+		if (d == 0) {
+			vector<string> ans(1, pos1);
+			while (pos1 != pos_s) {
+				pos1 = prev[pos1];
+				ans.push_back(pos1);
+			}
+			ans.push_back(pos_s);
+			sync_cout << "len(prev) = " << ans.size() << sync_endl;
+			return true;
+		}
+		pos.set(pos1, si, th);
+		for (auto pos2 : generateUndoPositions(pos)) {
+			if (prev.find(pos2) == prev.end()) {
+				prev[pos2] = pos1;
+				distance[pos2] = distance[pos1] + 1;
+				pos.set(pos2, si, th);
+				q.push(IS(pos.h_function(), pos2));
+			}
+		}
+	}
+	int maxv = -1;
+	string maxk;
+	for (const auto& [k, v]: distance) {
+		if (v > maxv) {
+			maxv = v;
+			maxk = k;
+		}
+	}
+	sync_cout << "maxv = " << maxv << ", maxk=" << maxk << ",pos_s =" << pos_s << sync_endl;
+	return false;
+}
+// "check_prev"コマンド処理部
+void check_reach_cmd(Position& pos, istringstream& is , StateListPtr& states)
+{
+	string filename;
+	is >> filename;
+//	sync_cout << "check_prev_cmd filename=" << filename << sync_endl;
+    SystemIO::TextReader reader;
+    if (reader.Open(filename).is_not_ok())
+       return;
+	string filename_OK(filename), filename_NG(filename);
+	filename_OK += "_OK.txt";
+	filename_NG += "_NG.txt";
+	SystemIO::TextWriter writer_OK, writer_NG;
+    if (writer_OK.Open(filename_OK).is_not_ok())
+       return;
+	if (writer_NG.Open(filename_NG).is_not_ok())
+       return; 
+    string line;
+	int count_all = 0, count_ok = 0;
+    while (reader.ReadLine(line).is_ok()) {
+		if (count_all % 1000 == 0) {
+			sync_cout << "count_all = " << count_all << sync_endl;
+		}
+		pos.set(fen_to_sfen(line), &states->back() , Threads.main());
+//		sync_cout << "line=" << line << ",pos=" << pos.sfen() << sync_endl;
+		if (check_reach(pos, &states->back() , Threads.main())) {
+			count_ok += 1;
+			writer_OK.WriteLine(line);
+		} else {
+			writer_NG.WriteLine(line);
+		}
+		count_all += 1;
+	}
+	reader.Close();
+//	sync_cout << "check_king_cmd " << count_ok << " / " << count_all << sync_endl;
+}
+
 // "test_generate_previous"コマンド処理部
 void test_generate_previous_cmd(Position& pos, istringstream& is , StateListPtr& states) {
 	{
@@ -790,8 +872,96 @@ void test_previous_positions_cmd(Position& pos, istringstream& is , StateListPtr
 			}
 		}
 	}
+		{
+		string sfen = fen_to_sfen("1g+P+P+p+L2g/GG2+PPkn1/2K3+r1r/+lBS1+P+P1p+L/1+p2+Pp+P1p/4N1p+b+n/2SpP2n1/1+S5+l1/3+s1+p3[P] w");
+		pos.set(sfen, &states->back() , Threads.main());
+		vector<string> poslist1 = generateUndoPositions(pos);
+		if (poslist1.size() != 0) {
+			for (auto p: poslist1) {
+				if (p != "1g+P+P+p+L2g/GG2+PP1n1/2K2k+r1r/+lBS1+P+P1p+L/1+p2+Pp+P1p/4N1p+b+n/2SpP2n1/1+S5+l1/3+s1+p3 w P 0") {
+					sync_cout << p << sync_endl;
+				}
+			}
+
+				}}
+		{
+		string sfen = fen_to_sfen("1+Pbk2+p+L1/1+s1+l1G2+r/1+Pp+NK1+P1+n/p2+pP+p1+sP/3Np4/+B2+n5/2g2p1+p+p/s1+LP2L1g/rg2S1+P+p1[p] w");
+		pos.set(sfen, &states->back() , Threads.main());
+		vector<string> poslist1 = generateUndoPositions(pos);
+		if (poslist1.size() != 4) {
+			for (auto p: poslist1) {
+					sync_cout << p << sync_endl;
+			}
+
+				}}
+		{
+		string sfen = "1+Pbk+l1+p+L1/1+s1+P1G2+r/1+Pp+NK1+P1+n/p2+pP+p1+sP/3Np4/+B2+n5/2g2p1+p+p/s1+LP2L1g/rg2S1+P+p1 w - 0";
+		pos.set(sfen, &states->back() , Threads.main());
+		vector<string> poslist1 = generateUndoPositions(pos);
+		if (poslist1.size() > 0 ) {
+			for (auto p: poslist1) {
+					sync_cout << p << sync_endl;
+			}
+
+				}
+		}
+		{
+			string fen = "1+Pbk2+p+L1/1+s1+l1G2+r/1+Pp+NK1+P1+n/p2+pP+p1+sP/3Np4/+B2+n5/2g2p1+p+p/s1+LP2L1g/rg2S1+P+p1[p] w";
+			string sfen = fen_to_sfen(fen);
+			pos.set(sfen, &states->back() , Threads.main());
+			vector<string> poslist1 = generateUndoPositions(pos);
+			if (poslist1.size() != 1) {
+				sync_cout << "poslist1.size() = " << poslist1.size() << sync_endl;
+				for (auto p: poslist1) {
+					sync_cout << p << sync_endl;
+				}
+			}
+		}
+	sync_cout << "done" << sync_endl;
 }
 
+// "test_hfunction"コマンド処理部
+void test_hfunction_cmd(Position& pos, istringstream& is , StateListPtr& states) {
+	{
+		{
+		string sfen = fen_to_sfen("4k4/9/9/9/9/9/9/9/4K4[PPPPPPPPPPPPPPPPPPllllnnNNggggrrbbssss] w");
+		pos.set(sfen, &states->back() , Threads.main());
+		if (!pos.pos_is_ok()) {
+			sync_cout << pos.sfen() << sync_endl;
+		}
+		int hval = pos.h_function();
+		if (hval != 0) {
+			sync_cout << pos.sfen() << ", hval=" << hval << sync_endl;
+		}
+		}
+		{
+		string sfen = fen_to_sfen("4k4/9/8+p/9/9/8P/9/9/4K4[PPPPPPPPPPPPPPPPllllnnNNggggrrbbssss] w");
+		pos.set(sfen, &states->back() , Threads.main());
+		if (!pos.pos_is_ok()) {
+			sync_cout << pos.sfen() << sync_endl;
+		}
+		int hval = pos.h_function();
+		if (hval != 30 + 4) {
+			sync_cout << pos.sfen() << ", hval=" << hval << sync_endl;
+		}
+		}
+	}
+	sync_cout << "done" << sync_endl;
+}
+
+// "test_reach"コマンド処理部
+void test_reach_cmd(Position& pos, istringstream& is , StateListPtr& states) {
+	{
+		string sfen = fen_to_sfen("1+Pbk2+p+L1/1+s1+l1G2+r/1+Pp+NK1+P1+n/p2+pP+p1+sP/3Np4/+B2+n5/2g2p1+p+p/s1+LP2L1g/rg2S1+P+p1[p] w");
+		pos.set(sfen, &states->back() , Threads.main());
+		if (!pos.pos_is_ok()) {
+			sync_cout << pos.sfen() << sync_endl;
+		}
+		if (check_reach(pos, &states->back() , Threads.main())) {
+			sync_cout << pos.sfen() << sync_endl;
+		}
+	}
+}
 // "setoption"コマンド応答。
 void setoption_cmd(istringstream& is)
 {
@@ -1281,6 +1451,9 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 		else if (token == "check_prev") {
 			check_prev_cmd(pos, is, states);
 		}
+		else if (token == "check_reach") {
+			check_reach_cmd(pos, is, states);
+		}
 
 		// 
 		else if (token == "test_generate_previous") {
@@ -1289,6 +1462,13 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 
 		else if (token == "test_previous_positions") {
 			test_previous_positions_cmd(pos, is, states);
+		}
+
+		else if (token == "test_hfunction") {
+			test_hfunction_cmd(pos, is, states);
+		}
+		else if (token == "test_reach") {
+			test_reach_cmd(pos, is, states);
 		}
 
 #if defined(MATE_1PLY) && defined(LONG_EFFECT_LIBRARY)
